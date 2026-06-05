@@ -71,9 +71,9 @@ Adapters provide the context-specific membrane:
 
 ## Related
 
-- [Urbi](../urbi) — Inward coherence layer (subscriber / publisher)
-- [Orbi](../orbi) — World-facing orchestration layer (publisher / subscriber)
-- [Autopoiesis](../autopoiesis) — Self-maintaining substrate
+- [Urbi](https://github.com/Vi-Chi/Urbi) — Inward coherence layer (subscriber / publisher)
+- [Orbi](https://github.com/Vi-Chi/Orbi) — World-facing orchestration layer (publisher / subscriber)
+- [Autopoiesis](https://github.com/Vi-Chi/autopoiesis) — Self-maintaining substrate
 
 ---
 
