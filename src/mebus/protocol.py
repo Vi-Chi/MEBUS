@@ -2,7 +2,7 @@
 
 M := (v, σ, π, δ, κ, τ, μ)        (Vi-Chi/MEBUS ARCHITECTURE.md)
   v  version     int   protocol schema version
-  σ  signature   str   payload schema / message-type id  ("cm.propose", "m.prediction_record")
+  σ  signature   str   payload schema / message-type id  ("cm.propose", "m.prediction_record", "ext.nmea")
   π  payload     dict  message content
   δ  destination str   target module / agent / path      ("cm.wibo835.broadcast", "urbi")
   κ  context     dict  contextual metadata: trust, provenance, expiry (the ΣBUS-CM envelope)
@@ -30,20 +30,19 @@ class Mode(str, Enum):
     DREAM = "DREAM"
 
 
-# ── Signature namespaces ──────────────────────────────────────────────
-# σ is dotted: "<class>.<name>".  Two payload classes reconcile the two buses:
-#   cm.*  ΣBUS-CM coordination speech-acts (announce, query, propose, delegate…)
-#   m.*   geometric cognition payloads (state, prediction_record…)
-#   sys.* bus/system control
-#
-# Ω₈: the ACTION layer (things that actuate or command) is gated off in DREAM.
+# σ is dotted "<class>.<name>". Payload classes unify the buses on one wire:
+#   cm.*   ΣBUS-CM coordination speech-acts (announce, query, propose, delegate…)
+#   m.*    geometric cognition payloads (state, prediction_record…)
+#   ext.*  universal carrier — ANY foreign payload (nmea, signalk, json, sdr, gui…)
+#   sys.*  bus/system control
+# Ω₈: the ACTION layer (actuation/commands) is gated off in DREAM.
 ACTION_LAYER_SIGNATURES: frozenset[str] = frozenset({
-    "cm.request", "cm.confirm", "cm.fail",      # action speech-acts
-    "cm.propose", "cm.agree", "cm.refuse", "cm.retract",  # negotiation → action
-    "cm.delegate", "cm.resume",                 # control delegation
-    "m.action",                                 # geometric action command
+    "cm.request", "cm.confirm", "cm.fail",
+    "cm.propose", "cm.agree", "cm.refuse", "cm.retract",
+    "cm.delegate", "cm.resume",
+    "m.action",
 })
-ACTION_LAYER_PREFIXES: tuple[str, ...] = ("cmd.",)   # any command path
+ACTION_LAYER_PREFIXES: tuple[str, ...] = ("cmd.",)
 
 
 class MebusError(Exception):
@@ -81,20 +80,17 @@ def is_action_layer(sigma: str) -> bool:
 @dataclass
 class MMessage:
     """The seven-field membrane message."""
-    sigma: str                       # σ — payload schema / type id
-    payload: dict                    # π — content
-    destination: str                 # δ — target
-    mode: Mode = Mode.WAKE           # μ — system mode
-    context: dict = field(default_factory=dict)   # κ — trust/provenance/expiry
-    tau: int = field(default_factory=monotonic_tau)  # τ — monotonic ns
-    version: int = PROTOCOL_VERSION  # v — protocol version
+    sigma: str
+    payload: dict
+    destination: str
+    mode: Mode = Mode.WAKE
+    context: dict = field(default_factory=dict)
+    tau: int = field(default_factory=monotonic_tau)
+    version: int = PROTOCOL_VERSION
 
-    # ── validation ──────────────────────────────────────────────
     def validate(self) -> "MMessage":
         if self.version != PROTOCOL_VERSION:
-            raise SchemaVersionError(
-                f"Expected v={PROTOCOL_VERSION}, got v={self.version}"
-            )
+            raise SchemaVersionError(f"Expected v={PROTOCOL_VERSION}, got v={self.version}")
         if not isinstance(self.mode, Mode):
             raise InvalidModeError(f"μ must be a Mode, got {type(self.mode).__name__}")
         if not self.sigma or "." not in self.sigma:
@@ -111,7 +107,11 @@ class MMessage:
     def is_action(self) -> bool:
         return is_action_layer(self.sigma)
 
-    # ── serialisation ───────────────────────────────────────────
+    @property
+    def sigma_class(self) -> str:
+        """The payload class: cm / m / ext / sys."""
+        return self.sigma.split(".", 1)[0]
+
     def to_dict(self) -> dict:
         return {
             "v": self.version,
@@ -141,13 +141,8 @@ class MMessage:
         return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-# ── The mode-gated membrane bus ────────────────────────────────────
 class MembraneBus:
-    """In-process MΣBUS reference router.
-
-    Enforces Invariant Ω₈: when μ = DREAM, action-layer messages are suppressed
-    (never delivered to handlers). LIMINAL is delivered but flagged advisory.
-    """
+    """In-process MΣBUS reference router. Enforces Ω₈ (action suppressed in DREAM)."""
 
     def __init__(self) -> None:
         self._handlers: dict[str, list[Callable[[MMessage], Any]]] = {}
@@ -157,12 +152,7 @@ class MembraneBus:
         self._handlers.setdefault(sigma, []).append(handler)
 
     def publish(self, msg: MMessage, *, strict: bool = False) -> bool:
-        """Validate, apply Ω₈, and route. Returns True if delivered.
-
-        Ω₈: action-layer message in DREAM → suppressed.
-          strict=True  → raise DreamActionSuppressed
-          strict=False → drop silently (audited), return False
-        """
+        """Validate, apply Ω₈, and route. Returns True if delivered."""
         msg.validate()
         suppressed = msg.mode == Mode.DREAM and msg.is_action
         self.audit_log.append({
@@ -172,9 +162,7 @@ class MembraneBus:
         })
         if suppressed:
             if strict:
-                raise DreamActionSuppressed(
-                    f"Ω₈: action σ={msg.sigma!r} suppressed in DREAM"
-                )
+                raise DreamActionSuppressed(f"Ω₈: action σ={msg.sigma!r} suppressed in DREAM")
             return False
         for handler in self._handlers.get(msg.sigma, []):
             handler(msg)
