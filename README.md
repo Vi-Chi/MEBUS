@@ -1,3 +1,13 @@
+
+> **Status:** Historical / superseded repository.
+>
+> This repository is preserved for project history and provenance.
+> Current active development has moved to:
+>
+> https://github.com/Vi-Chi/Cognitive-A.i-Matrix
+>
+> Do not treat this repository as current canon unless a file is explicitly referenced from the active project knowledge base.
+
 # MΣBUS — Membrane Sigma Bus
 
 > The connective tissue. The medium through which Urbi and Orbi breathe.
